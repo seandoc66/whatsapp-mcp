@@ -8,6 +8,11 @@ Object.assign(navigator, {
   }
 });
 
+// Mock document.execCommand for fallback copy
+Object.assign(document, {
+  execCommand: jest.fn(() => true)
+});
+
 // Mock window.matchMedia for responsive component testing
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

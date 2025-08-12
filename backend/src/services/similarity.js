@@ -72,12 +72,12 @@ class SimilarityService {
   }
 
   formatSimilarityResults(results, includeDistances = true) {
-    if (!results.documents || !results.documents[0]) {
+    if (!results.documents || !results.documents[0] || results.documents[0].length === 0) {
       return [];
     }
 
     const documents = results.documents[0];
-    const metadatas = results.metadatas[0];
+    const metadatas = results.metadatas ? results.metadatas[0] : [];
     const distances = results.distances ? results.distances[0] : [];
 
     return documents.map((doc, index) => {

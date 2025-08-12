@@ -13,7 +13,6 @@
     "cors": "^2.8.5",
     "sqlite3": "^5.1.6",
     "chromadb": "^1.8.1",
-    "sentence-transformers": "^0.1.0",
     "dotenv": "^16.0.0"
   },
   "devDependencies": {
