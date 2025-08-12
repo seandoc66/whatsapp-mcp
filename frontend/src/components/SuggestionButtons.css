@@ -1,0 +1,137 @@
+.suggestion-buttons {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.suggestion-buttons__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid #e9ecef;
+  border-top: 2px solid #007bff;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.suggestion-buttons__empty {
+  text-align: center;
+  padding: 2rem;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.suggestion-buttons__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.suggestion-buttons__header h3 {
+  margin: 0;
+  color: #495057;
+  font-size: 1.125rem;
+}
+
+.suggestion-buttons__count {
+  font-size: 0.875rem;
+  color: #6c757d;
+  background: #e9ecef;
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+}
+
+.suggestion-buttons__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.suggestion-button {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+}
+
+.suggestion-button:hover {
+  border-color: #007bff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
+}
+
+.suggestion-button:active {
+  transform: translateY(0);
+}
+
+.suggestion-button__content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.suggestion-button__text {
+  flex: 1;
+  color: #212529;
+  line-height: 1.4;
+  margin-bottom: 0.75rem;
+}
+
+.suggestion-button__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  color: #495057;
+  margin-top: auto;
+}
+
+.copy-icon {
+  margin-right: 0.25rem;
+}
+
+.copy-text {
+  font-weight: 500;
+}
+
+.suggestion-button:hover .suggestion-button__action {
+  background: #007bff;
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .suggestion-buttons__grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .suggestion-buttons__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+}
