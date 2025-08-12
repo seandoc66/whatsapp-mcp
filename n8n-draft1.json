@@ -1,0 +1,226 @@
+{
+  "name": "WhatsApp Reply Assistant - Main Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-message",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "WhatsApp Message Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate WhatsApp message data\nconst messageData = $input.first().json;\n\n// Validate required fields\nif (!messageData.content || !messageData.chat_jid || !messageData.sender) {\n  throw new Error('Missing required message fields');\n}\n\n// Clean and structure the message\nconst cleanMessage = {\n  id: messageData.id || Date.now().toString(),\n  chat_jid: messageData.chat_jid,\n  sender: messageData.sender,\n  content: messageData.content.trim(),\n  timestamp: messageData.timestamp || new Date().toISOString(),\n  is_from_me: messageData.is_from_me || false,\n  media_type: messageData.media_type || null\n};\n\n// Return structured message\nreturn {\n  json: {\n    message: cleanMessage,\n    needsSuggestions: !cleanMessage.is_from_me // Only suggest for incoming messages\n  }\n};"
+      },
+      "id": "validate-message",
+      "name": "Validate & Clean Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{ $json.needsSuggestions }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "needs-suggestions-check",
+      "name": "Needs Suggestions?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store message in SQLite database\nconst sqlite3 = require('sqlite3').verbose();\nconst path = require('path');\n\nconst dbPath = '/data/database/store/messages.db';\nconst message = $json.message;\n\n// Create database connection\nconst db = new sqlite3.Database(dbPath, (err) => {\n  if (err) {\n    console.error('Database connection error:', err);\n    throw err;\n  }\n});\n\n// Insert message into database\nconst insertSQL = `\n  INSERT OR REPLACE INTO messages \n  (id, chat_jid, sender, content, timestamp, is_from_me, media_type)\n  VALUES (?, ?, ?, ?, ?, ?, ?)\n`;\n\nconst params = [\n  message.id,\n  message.chat_jid,\n  message.sender,\n  message.content,\n  message.timestamp,\n  message.is_from_me ? 1 : 0,\n  message.media_type\n];\n\n// Execute insert\ndb.run(insertSQL, params, function(err) {\n  if (err) {\n    console.error('Insert error:', err);\n    db.close();\n    throw err;\n  }\n  \n  console.log(`Message inserted with ID: ${message.id}`);\n  db.close();\n});\n\n// Return message for next step\nreturn {\n  json: {\n    message: message,\n    stored: true\n  }\n};"
+      },
+      "id": "store-message",
+      "name": "Store in SQLite",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "model": "sentence-transformers/all-mpnet-base-v2",
+        "options": {}
+      },
+      "id": "generate-embedding",
+      "name": "Generate Embedding",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "jsCode": "# Query ChromaDB for similar messages\nimport chromadb\nimport json\n\n# Initialize ChromaDB client\nchroma_client = chromadb.PersistentClient(path=\"/data/database/chroma\")\ncollection = chroma_client.get_or_create_collection(name=\"conversation_embeddings\")\n\n# Get the embedding from previous step\nembedding_data = items[0]['json']\nquery_embedding = embedding_data.get('embedding', [])\n\nif not query_embedding:\n    print(\"No embedding found\")\n    return [{'json': {'similar_messages': [], 'suggestions': []}}]\n\n# Query for similar messages\ntry:\n    results = collection.query(\n        query_embeddings=[query_embedding],\n        n_results=5,\n        include=['documents', 'metadatas', 'distances']\n    )\n    \n    similar_messages = []\n    for i, doc in enumerate(results['documents'][0]):\n        metadata = results['metadatas'][0][i]\n        distance = results['distances'][0][i]\n        \n        # Only include business responses that are similar enough\n        if metadata.get('is_business_response') and distance < 0.7:\n            similar_messages.append({\n                'content': doc,\n                'similarity': 1 - distance,  # Convert distance to similarity\n                'metadata': metadata\n            })\n    \n    # Sort by similarity and take top 3\n    similar_messages.sort(key=lambda x: x['similarity'], reverse=True)\n    suggestions = [msg['content'] for msg in similar_messages[:3]]\n    \n    print(f\"Found {len(suggestions)} suggestions\")\n    \n    return [{\n        'json': {\n            'similar_messages': similar_messages,\n            'suggestions': suggestions,\n            'query_message': items[0]['json']['message']['content']\n        }\n    }]\n    \nexcept Exception as e:\n    print(f\"ChromaDB query error: {e}\")\n    return [{'json': {'similar_messages': [], 'suggestions': [], 'error': str(e)}}]"
+      },
+      "id": "similarity-search",
+      "name": "ChromaDB Similarity Search",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/webhooks/suggestions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "notify-frontend",
+      "name": "Notify Frontend via WebSocket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/webhooks/message-stored",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "notify-stored",
+      "name": "Notify Message Stored",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 200]
+    }
+  ],
+  "connections": {
+    "WhatsApp Message Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Clean Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Clean Message": {
+      "main": [
+        [
+          {
+            "node": "Needs Suggestions?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Suggestions?": {
+      "main": [
+        [
+          {
+            "node": "Store in SQLite",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store in SQLite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store in SQLite": {
+      "main": [
+        [
+          {
+            "node": "Notify Message Stored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding": {
+      "main": [
+        [
+          {
+            "node": "ChromaDB Similarity Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChromaDB Similarity Search": {
+      "main": [
+        [
+          {
+            "node": "Notify Frontend via WebSocket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCreatedBy": "n8n@1.0.0",
+    "instanceId": "whatsapp-reply-assistant"
+  },
+  "id": "1",
+  "tags": []
+}

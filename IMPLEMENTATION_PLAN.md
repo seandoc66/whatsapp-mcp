@@ -6,6 +6,8 @@
 - Comprehensive test suite (37 tests passing)
 - Backend services architected and tested
 - Frontend components designed and tested
+- MCP server implemented and tested
+- WhatsApp bridge used to download message history from WhatsApp, saved to SQLite database @database/source/messages.db
 - Database schema documented
 - Docker infrastructure prepared
 
@@ -13,53 +15,60 @@
 
 ---
 
-## Phase 1: Core Backend Implementation (Week 1)
+## Phase 1: n8n Workflows & Core Infrastructure (Week 1)
 
-### 1.1 Database & Storage Setup
-- [ ] Create SQLite database initialization script
-- [ ] Set up ChromaDB connection and collection management
-- [ ] Implement database migration system
-- [ ] Create seed data for testing
-- [ ] Add database health checks
-
-**Files to Create:**
-- `backend/src/database/init.js` - Database setup
-- `backend/src/database/migrations/` - Schema migrations
-- `backend/scripts/setup-db.js` - Setup script
-
-### 1.2 Core Services Implementation
-- [ ] Complete EmbeddingService with actual sentence-transformers integration
-- [ ] Implement SimilarityService with ChromaDB integration
-- [ ] Build WhatsAppService with real database operations
-- [ ] Add message anonymization logic
-- [ ] Create conversation context extraction
+### 1.1 n8n Environment Setup
+- [ ] Set up n8n instance in Docker
+- [ ] Configure embedding model (all-mpnet-base-v2) integration
+- [ ] Test n8n LangChain nodes with HuggingFace
+- [ ] Set up ChromaDB connection from n8n
+- [ ] Configure webhook endpoints for n8n
 
 **Files to Create:**
-- `backend/scripts/generate_embedding.py` - Python embedding script
-- `backend/src/services/anonymization.js` - Data cleaning
-- `backend/src/config/chroma.js` - ChromaDB configuration
+- `n8n/docker-compose.yml` - n8n instance configuration
+- `n8n/scripts/setup-embeddings.py` - Embedding model setup
+- `n8n/config/huggingface.env` - HF configuration
 
-### 1.3 REST API Server
-- [ ] Create Express server entry point
-- [ ] Implement API routes and middleware
-- [ ] Add CORS, error handling, logging
-- [ ] Set up environment configuration
-- [ ] Add API documentation
+### 1.2 Core n8n Workflows Implementation
+- [ ] Build **WhatsApp Message Ingestion** workflow
+- [ ] Create **Similarity Search & Response Generation** workflow  
+- [ ] Implement **Historical Data Migration** workflow
+- [ ] Build **Real-time WebSocket Orchestration** workflow
+- [ ] Create **Health Monitoring** workflow
 
 **Files to Create:**
-- `backend/src/server.js` - Main server
-- `backend/src/routes/messages.js` - Message endpoints
-- `backend/src/routes/health.js` - Health checks
-- `backend/src/middleware/` - Request handling
+- `workflows/whatsapp-ingestion.json` - Message ingestion
+- `workflows/similarity-processing.json` - Response generation
+- `workflows/data-migration.json` - Historical data processing
+- `workflows/websocket-manager.json` - Real-time communication
+- `workflows/system-monitor.json` - Health monitoring
 
-### 1.4 Integration & Testing
-- [ ] Connect all services together
-- [ ] Test with real SQLite database
-- [ ] Verify ChromaDB integration
-- [ ] End-to-end API testing
-- [ ] Performance optimization
+### 1.3 Lightweight Backend API
+- [ ] Create minimal Express server for WebSocket management
+- [ ] Add basic health check endpoints
+- [ ] Implement WebSocket connection handling
+- [ ] Add CORS and basic middleware
+- [ ] Create webhook receivers for n8n integration
 
-**Estimated Time: 5-7 days**
+**Files to Create:**
+- `backend/src/server.js` - Minimal WebSocket server
+- `backend/src/websocket/manager.js` - WebSocket handling
+- `backend/src/routes/webhooks.js` - n8n webhook endpoints
+- `backend/src/routes/health.js` - Basic health checks
+
+### 1.4 Database & Storage Setup
+- [ ] Create SQLite database initialization
+- [ ] Set up ChromaDB Docker container
+- [ ] Test database connections from n8n workflows
+- [ ] Create database seed data
+- [ ] Verify embedding storage and retrieval
+
+**Files to Create:**
+- `database/init/setup.sql` - Database initialization
+- `database/docker-compose.yml` - ChromaDB container
+- `database/seeds/test-data.sql` - Test data
+
+**Estimated Time: 5-7 days (Focus: n8n workflow development)**
 
 ---
 
@@ -223,47 +232,103 @@
 
 ---
 
-## Key Technical Decisions to Make
+## ✅ Key Technical Decisions CONFIRMED
 
 ### 1. Embedding Model Choice
-**Options:**
-- `all-MiniLM-L6-v2` (lightweight, fast)
-- `all-mpnet-base-v2` (better accuracy, slower)
-- Custom fine-tuned model for WhatsApp context
-
-**Recommendation:** Start with `all-MiniLM-L6-v2`, upgrade if needed
+**SELECTED:** `all-mpnet-base-v2` (better accuracy, user prefers accuracy over speed)
 
 ### 2. Real-time Communication
-**Options:**
-- WebSocket connection for instant updates
-- Server-sent events (SSE) for one-way updates
-- Long polling as fallback
-
-**Recommendation:** WebSocket with polling fallback
+**SELECTED:** WebSocket connection (speed is crucial per user requirement)
 
 ### 3. Message Processing Pipeline
-**Options:**
-- Synchronous processing (simple, might be slow)
-- Asynchronous with queue (complex, scalable)
-- Hybrid approach (async for heavy tasks)
-
-**Recommendation:** Start synchronous, add async for embedding generation
+**SELECTED:** Simple synchronous processing (user wants simplicity)
 
 ### 4. Data Storage Strategy
-**Options:**
-- Keep all data in SQLite (simple)
-- Split between SQLite and ChromaDB (current plan)
-- Add Redis for caching
-
-**Recommendation:** Current SQLite + ChromaDB approach, add Redis if performance issues
+**CONFIRMED:** SQLite + ChromaDB approach (working well in tests)
 
 ### 5. Deployment Strategy
-**Options:**
-- Single machine Docker Compose (simple)
-- Kubernetes for scalability
-- Cloud services (managed databases)
+**SELECTED:** Docker Compose (user confirmed this is fine for now)
 
-**Recommendation:** Start with Docker Compose, plan for cloud migration
+### 6. Logic Control Architecture
+**CRITICAL:** Heavy use of n8n workflows for business logic orchestration
+
+---
+
+## 🔄 n8n Workflow Architecture (CORE SYSTEM)
+
+The application logic will be primarily controlled by n8n workflows, with the backend serving as a lightweight API layer. This approach leverages n8n's powerful automation capabilities and AI integrations.
+
+### Primary n8n Workflows
+
+#### 1. **WhatsApp Message Ingestion Workflow** (`whatsapp-ingestion.json`)
+```
+WhatsApp MCP Server → Webhook Trigger → Message Validation → SQLite Insert → WebSocket Notify Frontend
+```
+**Nodes:**
+- `nodes-base.webhook` - Receive message from MCP server
+- `nodes-base.code` - Validate and clean message data (JavaScript)
+- `nodes-base.code` - Insert into SQLite database (JavaScript with sqlite3)
+- `nodes-base.httpRequest` - Notify backend API via WebSocket
+
+#### 2. **Similarity Search & Response Generation** (`similarity-processing.json`)
+```
+HTTP Request → Load Message → Generate Embedding → ChromaDB Search → Format Suggestions → Return Results
+```
+**Nodes:**
+- `nodes-base.webhook` - Receive search request from frontend
+- `nodes-base.code` - Load message from SQLite (JavaScript)
+- `nodes-langchain.embeddingsHuggingFaceInference` - Generate embeddings (all-mpnet-base-v2)
+- `nodes-base.code` - Query ChromaDB for similar vectors (Python)
+- `nodes-langchain.agent` - Format and rank suggestions using AI
+- `nodes-base.httpRequest` - Return suggestions to frontend
+
+#### 3. **Historical Data Migration** (`data-migration.json`)
+```
+Cron Trigger → Read SQLite Messages → Anonymize Data → Generate Embeddings → Store in ChromaDB → Log Progress
+```
+**Nodes:**
+- `nodes-base.cron` - Schedule migration batches
+- `nodes-base.code` - Read messages from SQLite (JavaScript)
+- `nodes-langchain.agent` - Anonymize personal data using AI
+- `nodes-langchain.embeddingsHuggingFaceInference` - Generate embeddings
+- `nodes-base.code` - Insert into ChromaDB (Python)
+- `nodes-base.httpRequest` - Update migration progress API
+
+#### 4. **Real-time WebSocket Orchestration** (`websocket-manager.json`)
+```
+Message Event → Process Business Logic → WebSocket Broadcast → Update Client State
+```
+**Nodes:**
+- `nodes-base.webhook` - Receive events from various sources
+- `nodes-base.code` - Business logic processing (JavaScript)
+- `nodes-base.httpRequest` - WebSocket broadcast to connected clients
+- `nodes-base.code` - Log and monitor connection health
+
+#### 5. **Health Monitoring & Error Handling** (`system-monitor.json`)
+```
+Cron → Check Services → Test Embeddings → Verify Databases → Alert on Failures
+```
+**Nodes:**
+- `nodes-base.cron` - Regular health checks
+- `nodes-base.httpRequest` - Test API endpoints
+- `nodes-base.code` - Check SQLite and ChromaDB (JavaScript/Python)
+- `nodes-langchain.embeddingsHuggingFaceInference` - Test embedding generation
+- `nodes-base.httpRequest` - Send alerts to monitoring endpoints
+
+### n8n Integration Benefits
+- **Visual Logic**: Business logic visible as flow diagrams
+- **AI Integration**: Native LangChain nodes for embeddings and AI processing
+- **Error Handling**: Built-in retry logic and error branches
+- **Scalability**: Easy to add new workflows and modify existing ones
+- **Monitoring**: Native execution tracking and debugging
+- **Code Reuse**: Shared functions across workflows via Code nodes
+
+### Backend API Role (Simplified)
+The Node.js backend becomes a lightweight layer focused on:
+- WebSocket connection management
+- Basic CRUD operations
+- Health check endpoints
+- Static file serving for React frontend
 
 ---
 

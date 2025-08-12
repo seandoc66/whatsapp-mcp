@@ -1,0 +1,191 @@
+{
+  "name": "Historical Data Migration",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "migration-trigger",
+      "name": "Daily Migration Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read messages from SQLite database for migration\nconst sqlite3 = require('sqlite3').verbose();\nconst dbPath = '/data/database/store/messages.db';\n\n// Create database connection\nconst db = new sqlite3.Database(dbPath);\n\n// Get messages that haven't been processed yet\nconst query = `\n  SELECT m.*, c.name as chat_name\n  FROM messages m\n  LEFT JOIN chats c ON m.chat_jid = c.jid\n  WHERE m.content IS NOT NULL \n    AND m.content != ''\n    AND LENGTH(m.content) > 10\n    AND m.id NOT IN (\n      SELECT message_id FROM processed_embeddings \n      WHERE processed_embeddings.message_id = m.id\n    )\n  ORDER BY m.timestamp DESC\n  LIMIT 50\n`;\n\nreturn new Promise((resolve, reject) => {\n  db.all(query, [], (err, rows) => {\n    if (err) {\n      console.error('Query error:', err);\n      db.close();\n      reject(err);\n      return;\n    }\n    \n    console.log(`Found ${rows.length} messages to process`);\n    \n    // Transform each row into a separate item\n    const items = rows.map(row => ({\n      json: {\n        message_id: row.id,\n        chat_jid: row.chat_jid,\n        chat_name: row.chat_name || 'Unknown',\n        sender: row.sender,\n        content: row.content,\n        timestamp: row.timestamp,\n        is_from_me: Boolean(row.is_from_me),\n        is_business_response: Boolean(row.is_from_me)\n      }\n    }));\n    \n    db.close();\n    resolve(items);\n  });\n});"
+      },
+      "id": "read-messages",
+      "name": "Read Unprocessed Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "anonymized_content",
+              "name": "anonymized_content",
+              "value": "={{ $json.content.replace(/\\b\\d{10,}\\b/g, '[PHONE]').replace(/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g, '[EMAIL]').replace(/\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b/g, '[CARD]') }}",
+              "type": "string"
+            },
+            {
+              "id": "sender_anonymized",
+              "name": "sender_anonymized",
+              "value": "={{ $json.sender.includes('@') ? '[USER]' : $json.sender }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "anonymize-data",
+      "name": "Anonymize Personal Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "model": "sentence-transformers/all-mpnet-base-v2",
+        "options": {}
+      },
+      "id": "generate-embeddings",
+      "name": "Generate Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "jsCode": "# Store embeddings in ChromaDB\nimport chromadb\nimport json\nfrom datetime import datetime\n\n# Initialize ChromaDB client\nchroma_client = chromadb.PersistentClient(path=\"/data/database/chroma\")\ncollection = chroma_client.get_or_create_collection(name=\"conversation_embeddings\")\n\n# Process each item\nprocessed_count = 0\nfailed_count = 0\nresults = []\n\nfor item in items:\n    try:\n        data = item['json']\n        \n        # Get the embedding (should be from previous node)\n        embedding = data.get('embedding', [])\n        if not embedding:\n            print(f\"No embedding for message {data['message_id']}\")\n            failed_count += 1\n            continue\n            \n        # Prepare metadata\n        metadata = {\n            'message_id': data['message_id'],\n            'chat_jid': data['chat_jid'],\n            'chat_name': data['chat_name'],\n            'sender': data['sender_anonymized'],\n            'timestamp': data['timestamp'],\n            'is_business_response': data['is_business_response']\n        }\n        \n        # Add to ChromaDB\n        collection.add(\n            ids=[data['message_id']],\n            embeddings=[embedding],\n            documents=[data['anonymized_content']],\n            metadatas=[metadata]\n        )\n        \n        processed_count += 1\n        \n        # Prepare result for database tracking\n        results.append({\n            'json': {\n                'message_id': data['message_id'],\n                'processed_at': datetime.now().isoformat(),\n                'status': 'success'\n            }\n        })\n        \n    except Exception as e:\n        print(f\"Error processing message {data.get('message_id', 'unknown')}: {e}\")\n        failed_count += 1\n        results.append({\n            'json': {\n                'message_id': data.get('message_id', 'unknown'),\n                'processed_at': datetime.now().isoformat(),\n                'status': 'failed',\n                'error': str(e)\n            }\n        })\n\nprint(f\"Migration complete: {processed_count} processed, {failed_count} failed\")\n\n# Return summary\nreturn [{\n    'json': {\n        'migration_summary': {\n            'processed_count': processed_count,\n            'failed_count': failed_count,\n            'timestamp': datetime.now().isoformat()\n        },\n        'processed_messages': results\n    }\n}]"
+      },
+      "id": "store-embeddings",
+      "name": "Store in ChromaDB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mark messages as processed in SQLite\nconst sqlite3 = require('sqlite3').verbose();\nconst dbPath = '/data/database/store/messages.db';\n\nconst db = new sqlite3.Database(dbPath);\n\n// Create processed_embeddings table if it doesn't exist\nconst createTableSQL = `\n  CREATE TABLE IF NOT EXISTS processed_embeddings (\n    message_id TEXT PRIMARY KEY,\n    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    status TEXT DEFAULT 'success'\n  )\n`;\n\ndb.run(createTableSQL);\n\n// Insert processed message IDs\nconst insertSQL = `INSERT OR REPLACE INTO processed_embeddings (message_id, processed_at, status) VALUES (?, ?, ?)`;\nconst summary = $json.migration_summary;\nconst processedMessages = $json.processed_messages;\n\nlet insertCount = 0;\n\nprocessedMessages.forEach(msg => {\n  db.run(insertSQL, [\n    msg.json.message_id,\n    msg.json.processed_at,\n    msg.json.status\n  ], (err) => {\n    if (!err) insertCount++;\n  });\n});\n\n// Wait a bit for all inserts to complete\nsetTimeout(() => {\n  db.close();\n  console.log(`Marked ${insertCount} messages as processed`);\n}, 1000);\n\n// Return summary for logging\nreturn {\n  json: {\n    migration_completed: true,\n    ...summary,\n    database_updated: true\n  }\n};"
+      },
+      "id": "mark-processed",
+      "name": "Mark as Processed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/webhooks/migration-status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "log-progress",
+      "name": "Log Migration Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Daily Migration Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Unprocessed Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Unprocessed Messages": {
+      "main": [
+        [
+          {
+            "node": "Anonymize Personal Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anonymize Personal Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Store in ChromaDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store in ChromaDB": {
+      "main": [
+        [
+          {
+            "node": "Mark as Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Processed": {
+      "main": [
+        [
+          {
+            "node": "Log Migration Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCreatedBy": "n8n@1.0.0",
+    "instanceId": "whatsapp-reply-assistant"
+  },
+  "id": "2",
+  "tags": ["migration", "embeddings", "historical-data"]
+}

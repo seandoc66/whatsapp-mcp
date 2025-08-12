@@ -368,3 +368,5 @@ python -c "from sentence_transformers import SentenceTransformer; print('OK')"
 ---
 
 *This project builds upon the excellent WhatsApp MCP server by lharries, extending it into a full business communication assistant.*
+
+we will use n8n for a lot of the logic. remember to use the installed n8n-mcp tools you have    
