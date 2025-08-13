@@ -1,0 +1,608 @@
+{
+  "name": "Real-time Operations Hub",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-message",
+        "options": {}
+      },
+      "id": "whatsapp-webhook",
+      "name": "WhatsApp Message Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "*/5 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "health-monitor-cron",
+      "name": "Health Monitor (Every 5min)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "websocket-event",
+        "options": {}
+      },
+      "id": "websocket-webhook",
+      "name": "WebSocket Event Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "operation_type",
+              "name": "operation_type",
+              "value": "whatsapp_message",
+              "type": "string"
+            },
+            {
+              "id": "trigger_source",
+              "name": "trigger_source",
+              "value": "webhook",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-whatsapp-type",
+      "name": "Set WhatsApp Operation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "operation_type",
+              "name": "operation_type",
+              "value": "health_monitor",
+              "type": "string"
+            },
+            {
+              "id": "trigger_source",
+              "name": "trigger_source",
+              "value": "cron",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-health-type",
+      "name": "Set Health Monitor Operation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "operation_type",
+              "name": "operation_type",
+              "value": "websocket_event",
+              "type": "string"
+            },
+            {
+              "id": "trigger_source",
+              "name": "trigger_source",
+              "value": "webhook",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-websocket-type",
+      "name": "Set WebSocket Operation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge-operations",
+      "name": "Merge All Operations",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "whatsapp-condition",
+              "leftValue": "={{ $json.operation_type }}",
+              "rightValue": "whatsapp_message",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-operations",
+      "name": "Route Operations",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [900, 400],
+      "parameters": {
+        "options": {},
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "whatsapp-condition",
+                    "leftValue": "={{ $json.operation_type }}",
+                    "rightValue": "whatsapp_message",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "whatsapp"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "health-condition",
+                    "leftValue": "={{ $json.operation_type }}",
+                    "rightValue": "health_monitor",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "health"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "websocket-condition",
+                    "leftValue": "={{ $json.operation_type }}",
+                    "rightValue": "websocket_event",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "websocket"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process WhatsApp message\nconst messageData = $input.first().json;\n\n// Validate and clean message\nif (!messageData.content || !messageData.chat_jid || !messageData.sender) {\n  throw new Error('Missing required message fields');\n}\n\nconst cleanMessage = {\n  id: messageData.id || Date.now().toString(),\n  chat_jid: messageData.chat_jid,\n  sender: messageData.sender,\n  content: messageData.content.trim(),\n  timestamp: messageData.timestamp || new Date().toISOString(),\n  is_from_me: messageData.is_from_me || false,\n  media_type: messageData.media_type || null\n};\n\n// Store in SQLite\nconst sqlite3 = require('sqlite3').verbose();\nconst dbPath = '/data/database/store/messages.db';\nconst db = new sqlite3.Database(dbPath);\n\nconst insertSQL = `INSERT OR REPLACE INTO messages (id, chat_jid, sender, content, timestamp, is_from_me, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)`;\nconst params = [cleanMessage.id, cleanMessage.chat_jid, cleanMessage.sender, cleanMessage.content, cleanMessage.timestamp, cleanMessage.is_from_me ? 1 : 0, cleanMessage.media_type];\n\nreturn new Promise((resolve, reject) => {\n  db.run(insertSQL, params, function(err) {\n    if (err) {\n      console.error('Insert error:', err);\n      db.close();\n      reject(err);\n      return;\n    }\n    \n    console.log(`Message stored: ${cleanMessage.id}`);\n    db.close();\n    \n    resolve({\n      json: {\n        message: cleanMessage,\n        stored: true,\n        needsSuggestions: !cleanMessage.is_from_me\n      }\n    });\n  });\n});"
+      },
+      "id": "process-whatsapp",
+      "name": "Process WhatsApp Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Comprehensive health check\nconst results = {\n  timestamp: new Date().toISOString(),\n  checks: {\n    backend: { status: 'unknown' },\n    sqlite: { status: 'unknown', message_count: 0 },\n    chromadb: { status: 'unknown', embedding_count: 0 },\n    embeddings: { status: 'unknown' }\n  },\n  overall_status: 'unknown'\n};\n\n// Check SQLite\ntry {\n  const sqlite3 = require('sqlite3').verbose();\n  const fs = require('fs');\n  const dbPath = '/data/database/store/messages.db';\n  \n  if (fs.existsSync(dbPath)) {\n    const db = new sqlite3.Database(dbPath);\n    \n    return new Promise((resolve) => {\n      db.get(\"SELECT COUNT(*) as count, MAX(timestamp) as last_time FROM messages\", [], (err, row) => {\n        if (!err) {\n          results.checks.sqlite = {\n            status: 'healthy',\n            message_count: row.count,\n            last_message: row.last_time\n          };\n        } else {\n          results.checks.sqlite = { status: 'error', error: err.message };\n        }\n        \n        // Determine overall status\n        const healthyChecks = Object.values(results.checks).filter(c => c.status === 'healthy').length;\n        const totalChecks = Object.keys(results.checks).length;\n        \n        if (healthyChecks === totalChecks) {\n          results.overall_status = 'healthy';\n        } else if (healthyChecks >= totalChecks / 2) {\n          results.overall_status = 'degraded';\n        } else {\n          results.overall_status = 'critical';\n        }\n        \n        console.log(`Health check complete: ${results.overall_status}`);\n        db.close();\n        resolve({ json: results });\n      });\n    });\n  } else {\n    results.checks.sqlite = { status: 'error', error: 'Database file not found' };\n    results.overall_status = 'critical';\n    return { json: results };\n  }\n} catch (error) {\n  results.checks.sqlite = { status: 'error', error: error.message };\n  results.overall_status = 'critical';\n  return { json: results };\n}"
+      },
+      "id": "process-health",
+      "name": "Process Health Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process WebSocket event\nconst eventData = $input.first().json;\n\nif (!eventData.event_type || !eventData.payload) {\n  throw new Error('Invalid WebSocket event structure');\n}\n\nconst processedEvent = {\n  event_id: eventData.event_id || Date.now().toString(),\n  event_type: eventData.event_type,\n  timestamp: new Date().toISOString(),\n  payload: eventData.payload,\n  client_id: eventData.client_id || 'unknown',\n  requires_broadcast: true\n};\n\n// Determine routing and priority\nswitch (eventData.event_type) {\n  case 'new_message':\n  case 'suggestions_ready':\n    processedEvent.priority = 'high';\n    processedEvent.target_clients = 'all';\n    break;\n  case 'system_status':\n    processedEvent.priority = 'normal';\n    processedEvent.target_clients = 'all';\n    break;\n  default:\n    processedEvent.priority = 'normal';\n    processedEvent.target_clients = 'all';\n}\n\nconsole.log(`Processing WebSocket event: ${processedEvent.event_type}`);\n\nreturn {\n  json: processedEvent\n};"
+      },
+      "id": "process-websocket",
+      "name": "Process WebSocket Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-suggestions",
+              "leftValue": "={{ $json.needsSuggestions }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-needs-suggestions",
+      "name": "Needs Suggestions?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "model": "sentence-transformers/all-mpnet-base-v2",
+        "options": {}
+      },
+      "id": "generate-embedding",
+      "name": "Generate Embedding",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+      "typeVersion": 1,
+      "position": [1560, 150]
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "jsCode": "# ChromaDB similarity search and suggestion generation\nimport chromadb\nimport json\nfrom datetime import datetime\n\n# Get message and embedding\nmessage_data = items[0]['json']['message']\nembedding_data = items[0]['json']\nquery_embedding = embedding_data.get('embedding', [])\n\nif not query_embedding:\n    print(\"No embedding found\")\n    return [{'json': {'suggestions': [], 'similar_messages': [], 'error': 'No embedding'}}]\n\ntry:\n    # Initialize ChromaDB\n    chroma_client = chromadb.PersistentClient(path=\"/data/database/chroma\")\n    collection = chroma_client.get_or_create_collection(name=\"conversation_embeddings\")\n    \n    # Query for similar messages\n    results = collection.query(\n        query_embeddings=[query_embedding],\n        n_results=5,\n        include=['documents', 'metadatas', 'distances'],\n        where={'is_business_response': True}  # Only business responses\n    )\n    \n    suggestions = []\n    similar_messages = []\n    \n    if results['documents'] and results['documents'][0]:\n        for i, doc in enumerate(results['documents'][0]):\n            metadata = results['metadatas'][0][i]\n            distance = results['distances'][0][i]\n            similarity = 1 - distance\n            \n            # Only include high-similarity responses\n            if similarity > 0.3:  # 30% similarity threshold\n                similar_msg = {\n                    'content': doc,\n                    'similarity': similarity,\n                    'metadata': metadata\n                }\n                similar_messages.append(similar_msg)\n                \n                # Add to suggestions if very relevant\n                if similarity > 0.5 and len(suggestions) < 3:\n                    suggestions.append(doc)\n    \n    print(f\"Found {len(suggestions)} suggestions from {len(similar_messages)} similar messages\")\n    \n    # Create response payload\n    response = {\n        'query_message': message_data['content'],\n        'suggestions': suggestions[:3],  # Max 3 suggestions\n        'similar_messages': similar_messages[:5],  # Max 5 for context\n        'chat_jid': message_data['chat_jid'],\n        'message_id': message_data['id'],\n        'timestamp': datetime.now().isoformat(),\n        'suggestion_count': len(suggestions)\n    }\n    \n    return [{'json': response}]\n    \nexcept Exception as e:\n    print(f\"ChromaDB error: {e}\")\n    return [{'json': {'suggestions': [], 'similar_messages': [], 'error': str(e)}}]"
+      },
+      "id": "similarity-search",
+      "name": "Similarity Search & Generate Suggestions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 150]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/websocket/broadcast",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Event-Type",
+              "value": "suggestions_ready"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "id": "broadcast-suggestions",
+      "name": "Broadcast Suggestions to Frontend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 150]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/websocket/broadcast",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Event-Type",
+              "value": "health_status"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "broadcast-health",
+      "name": "Broadcast Health Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/websocket/broadcast",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "broadcast-websocket-event",
+      "name": "Broadcast WebSocket Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 600]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/webhooks/message-stored",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({message_id: $json.message.id, stored: $json.stored, timestamp: $json.message.timestamp}) }}",
+        "options": {}
+      },
+      "id": "notify-message-stored",
+      "name": "Notify Message Stored",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1560, 250]
+    }
+  ],
+  "connections": {
+    "WhatsApp Message Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set WhatsApp Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Monitor (Every 5min)": {
+      "main": [
+        [
+          {
+            "node": "Set Health Monitor Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WebSocket Event Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set WebSocket Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set WhatsApp Operation": {
+      "main": [
+        [
+          {
+            "node": "Merge All Operations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Health Monitor Operation": {
+      "main": [
+        [
+          {
+            "node": "Merge All Operations",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Set WebSocket Operation": {
+      "main": [
+        [
+          {
+            "node": "Merge All Operations",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge All Operations": {
+      "main": [
+        [
+          {
+            "node": "Route Operations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Operations": {
+      "main": [
+        [
+          {
+            "node": "Process WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Health Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process WebSocket Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "Needs Suggestions?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Health Check": {
+      "main": [
+        [
+          {
+            "node": "Broadcast Health Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process WebSocket Event": {
+      "main": [
+        [
+          {
+            "node": "Broadcast WebSocket Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Suggestions?": {
+      "main": [
+        [
+          {
+            "node": "Generate Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Message Stored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding": {
+      "main": [
+        [
+          {
+            "node": "Similarity Search & Generate Suggestions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Similarity Search & Generate Suggestions": {
+      "main": [
+        [
+          {
+            "node": "Broadcast Suggestions to Frontend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCreatedBy": "n8n@1.0.0",
+    "instanceId": "whatsapp-reply-assistant"
+  },
+  "id": "main-operations",
+  "tags": ["realtime", "whatsapp", "websocket", "health"]
+}

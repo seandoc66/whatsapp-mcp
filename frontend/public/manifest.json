@@ -1,0 +1,16 @@
+{
+  "short_name": "WhatsApp Assistant",
+  "name": "WhatsApp Reply Assistant - AI-powered Business Communication",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📱</text></svg>",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#25d366",
+  "background_color": "#ffffff",
+  "description": "AI-powered response suggestions for WhatsApp business communication using semantic similarity search and real-time processing."
+}

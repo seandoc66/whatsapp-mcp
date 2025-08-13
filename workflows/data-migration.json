@@ -20,10 +20,10 @@
     },
     {
       "parameters": {
-        "jsCode": "// Read messages from SQLite database for migration\nconst sqlite3 = require('sqlite3').verbose();\nconst dbPath = '/data/database/store/messages.db';\n\n// Create database connection\nconst db = new sqlite3.Database(dbPath);\n\n// Get messages that haven't been processed yet\nconst query = `\n  SELECT m.*, c.name as chat_name\n  FROM messages m\n  LEFT JOIN chats c ON m.chat_jid = c.jid\n  WHERE m.content IS NOT NULL \n    AND m.content != ''\n    AND LENGTH(m.content) > 10\n    AND m.id NOT IN (\n      SELECT message_id FROM processed_embeddings \n      WHERE processed_embeddings.message_id = m.id\n    )\n  ORDER BY m.timestamp DESC\n  LIMIT 50\n`;\n\nreturn new Promise((resolve, reject) => {\n  db.all(query, [], (err, rows) => {\n    if (err) {\n      console.error('Query error:', err);\n      db.close();\n      reject(err);\n      return;\n    }\n    \n    console.log(`Found ${rows.length} messages to process`);\n    \n    // Transform each row into a separate item\n    const items = rows.map(row => ({\n      json: {\n        message_id: row.id,\n        chat_jid: row.chat_jid,\n        chat_name: row.chat_name || 'Unknown',\n        sender: row.sender,\n        content: row.content,\n        timestamp: row.timestamp,\n        is_from_me: Boolean(row.is_from_me),\n        is_business_response: Boolean(row.is_from_me)\n      }\n    }));\n    \n    db.close();\n    resolve(items);\n  });\n});"
+        "jsCode": "// Smart filtering: Read high-quality business conversations\nconst sqlite3 = require('sqlite3').verbose();\nconst dbPath = '/data/database/store/messages.db';\n\n// Create database connection\nconst db = new sqlite3.Database(dbPath);\n\n// Define chat exclusion patterns (personal/family chats)\nconst excludedChatPatterns = [\n  'Familia%', 'Family%', 'familia%',\n  '%Mamis%', '%mamis%',\n  'Welcome 2024-2025', // Group chat\n  'Gins Mamis'\n];\n\n// Build exclusion conditions\nconst excludeConditions = excludedChatPatterns.map(() => 'c.name NOT LIKE ?').join(' AND ');\n\n// Smart filtering query:\n// 1. Exclude obvious personal/family chats\n// 2. Remove standardized auto-responses\n// 3. Focus on business conversations with substance\n// 4. Preserve conversation context (include both sides)\nconst query = `\n  SELECT m.*, c.name as chat_name,\n         CASE WHEN c.name IN (\n           SELECT DISTINCT c2.name FROM chats c2 \n           JOIN messages m2 ON c2.jid = m2.chat_jid \n           WHERE m2.is_from_me = 1 \n           AND LENGTH(m2.content) > 50\n           GROUP BY c2.name \n           HAVING COUNT(*) >= 3\n         ) THEN 1 ELSE 0 END as is_business_chat\n  FROM messages m\n  LEFT JOIN chats c ON m.chat_jid = c.jid\n  WHERE m.content IS NOT NULL \n    AND m.content != ''\n    AND LENGTH(m.content) > 5\n    -- Exclude standardized auto-responses\n    AND m.content NOT LIKE '%Welcome English School%'\n    AND m.content NOT LIKE '%horario de atención%'\n    AND m.content NOT LIKE '%no podemos atenderte%'\n    AND m.content NOT LIKE '%Ahora no podemos atenderte%'\n    -- Exclude obvious personal chats\n    AND (${excludeConditions})\n    -- Focus on business conversations\n    AND c.name IN (\n      SELECT DISTINCT c3.name FROM chats c3 \n      JOIN messages m3 ON c3.jid = m3.chat_jid \n      WHERE m3.is_from_me = 1 \n      AND LENGTH(m3.content) > 50\n      AND m3.content NOT LIKE '%Welcome English School%'\n      GROUP BY c3.name \n      HAVING COUNT(*) >= 3\n    )\n    -- Skip already processed\n    AND m.id NOT IN (\n      SELECT message_id FROM processed_embeddings \n      WHERE processed_embeddings.message_id = m.id\n    )\n  ORDER BY c.name, m.timestamp ASC\n  LIMIT 100\n`;\n\n// Prepare parameters for exclusion patterns\nconst queryParams = excludedChatPatterns;\n\nreturn new Promise((resolve, reject) => {\n  db.all(query, queryParams, (err, rows) => {\n    if (err) {\n      console.error('Query error:', err);\n      db.close();\n      reject(err);\n      return;\n    }\n    \n    console.log(`Found ${rows.length} quality business messages to process`);\n    \n    // Group by conversations to preserve context\n    const conversationGroups = {};\n    \n    rows.forEach(row => {\n      const chatName = row.chat_name || 'Unknown';\n      if (!conversationGroups[chatName]) {\n        conversationGroups[chatName] = [];\n      }\n      conversationGroups[chatName].push(row);\n    });\n    \n    console.log(`Processing ${Object.keys(conversationGroups).length} business conversations`);\n    \n    // Transform each message preserving conversation context\n    const items = rows.map(row => ({\n      json: {\n        message_id: row.id,\n        chat_jid: row.chat_jid,\n        chat_name: row.chat_name || 'Unknown',\n        sender: row.sender,\n        content: row.content.trim(),\n        timestamp: row.timestamp,\n        is_from_me: Boolean(row.is_from_me),\n        is_business_response: Boolean(row.is_from_me),\n        is_business_chat: Boolean(row.is_business_chat),\n        content_length: row.content.length\n      }\n    }));\n    \n    db.close();\n    resolve(items);\n  });\n});"
       },
       "id": "read-messages",
-      "name": "Read Unprocessed Messages",
+      "name": "Read Quality Business Messages",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [460, 300]
@@ -35,7 +35,7 @@
             {
               "id": "anonymized_content",
               "name": "anonymized_content",
-              "value": "={{ $json.content.replace(/\\b\\d{10,}\\b/g, '[PHONE]').replace(/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g, '[EMAIL]').replace(/\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b/g, '[CARD]') }}",
+              "value": "={{ $json.content.replace(/\\b\\d{10,}\\b/g, '[PHONE]').replace(/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g, '[EMAIL]').replace(/\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b/g, '[CARD]').replace(/\\b(?:IBAN|iban)\\s*:?\\s*[A-Z]{2}\\d{2}[A-Z0-9]{4}\\d{7}([A-Z0-9]?){0,16}\\b/g, '[IBAN]') }}",
               "type": "string"
             },
             {
@@ -43,13 +43,19 @@
               "name": "sender_anonymized",
               "value": "={{ $json.sender.includes('@') ? '[USER]' : $json.sender }}",
               "type": "string"
+            },
+            {
+              "id": "conversation_context",
+              "name": "conversation_context",
+              "value": "={{ $json.chat_name + ' - ' + ($json.is_from_me ? 'Business' : 'Customer') + ' - ' + $json.timestamp }}",
+              "type": "string"
             }
           ]
         },
         "options": {}
       },
       "id": "anonymize-data",
-      "name": "Anonymize Personal Data",
+      "name": "Anonymize & Add Context",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
       "position": [680, 300]
@@ -68,7 +74,7 @@
     {
       "parameters": {
         "language": "python",
-        "jsCode": "# Store embeddings in ChromaDB\nimport chromadb\nimport json\nfrom datetime import datetime\n\n# Initialize ChromaDB client\nchroma_client = chromadb.PersistentClient(path=\"/data/database/chroma\")\ncollection = chroma_client.get_or_create_collection(name=\"conversation_embeddings\")\n\n# Process each item\nprocessed_count = 0\nfailed_count = 0\nresults = []\n\nfor item in items:\n    try:\n        data = item['json']\n        \n        # Get the embedding (should be from previous node)\n        embedding = data.get('embedding', [])\n        if not embedding:\n            print(f\"No embedding for message {data['message_id']}\")\n            failed_count += 1\n            continue\n            \n        # Prepare metadata\n        metadata = {\n            'message_id': data['message_id'],\n            'chat_jid': data['chat_jid'],\n            'chat_name': data['chat_name'],\n            'sender': data['sender_anonymized'],\n            'timestamp': data['timestamp'],\n            'is_business_response': data['is_business_response']\n        }\n        \n        # Add to ChromaDB\n        collection.add(\n            ids=[data['message_id']],\n            embeddings=[embedding],\n            documents=[data['anonymized_content']],\n            metadatas=[metadata]\n        )\n        \n        processed_count += 1\n        \n        # Prepare result for database tracking\n        results.append({\n            'json': {\n                'message_id': data['message_id'],\n                'processed_at': datetime.now().isoformat(),\n                'status': 'success'\n            }\n        })\n        \n    except Exception as e:\n        print(f\"Error processing message {data.get('message_id', 'unknown')}: {e}\")\n        failed_count += 1\n        results.append({\n            'json': {\n                'message_id': data.get('message_id', 'unknown'),\n                'processed_at': datetime.now().isoformat(),\n                'status': 'failed',\n                'error': str(e)\n            }\n        })\n\nprint(f\"Migration complete: {processed_count} processed, {failed_count} failed\")\n\n# Return summary\nreturn [{\n    'json': {\n        'migration_summary': {\n            'processed_count': processed_count,\n            'failed_count': failed_count,\n            'timestamp': datetime.now().isoformat()\n        },\n        'processed_messages': results\n    }\n}]"
+        "jsCode": "# Store embeddings in ChromaDB\nimport chromadb\nimport json\nfrom datetime import datetime\n\n# Initialize ChromaDB client\nchroma_client = chromadb.PersistentClient(path=\"/data/database/chroma\")\ncollection = chroma_client.get_or_create_collection(name=\"conversation_embeddings\")\n\n# Process each item\nprocessed_count = 0\nfailed_count = 0\nresults = []\n\nfor item in items:\n    try:\n        data = item['json']\n        \n        # Get the embedding (should be from previous node)\n        embedding = data.get('embedding', [])\n        if not embedding:\n            print(f\"No embedding for message {data['message_id']}\")\n            failed_count += 1\n            continue\n            \n        # Prepare metadata with conversation context\n        metadata = {\n            'message_id': data['message_id'],\n            'chat_jid': data['chat_jid'],\n            'chat_name': data['chat_name'],\n            'sender': data['sender_anonymized'],\n            'timestamp': data['timestamp'],\n            'is_business_response': data['is_business_response'],\n            'is_business_chat': data['is_business_chat'],\n            'conversation_context': data['conversation_context'],\n            'content_length': data['content_length']\n        }\n        \n        # Add to ChromaDB\n        collection.add(\n            ids=[data['message_id']],\n            embeddings=[embedding],\n            documents=[data['anonymized_content']],\n            metadatas=[metadata]\n        )\n        \n        processed_count += 1\n        \n        # Prepare result for database tracking\n        results.append({\n            'json': {\n                'message_id': data['message_id'],\n                'processed_at': datetime.now().isoformat(),\n                'status': 'success'\n            }\n        })\n        \n    except Exception as e:\n        print(f\"Error processing message {data.get('message_id', 'unknown')}: {e}\")\n        failed_count += 1\n        results.append({\n            'json': {\n                'message_id': data.get('message_id', 'unknown'),\n                'processed_at': datetime.now().isoformat(),\n                'status': 'failed',\n                'error': str(e)\n            }\n        })\n\nprint(f\"Migration complete: {processed_count} processed, {failed_count} failed\")\n\n# Return summary\nreturn [{\n    'json': {\n        'migration_summary': {\n            'processed_count': processed_count,\n            'failed_count': failed_count,\n            'timestamp': datetime.now().isoformat()\n        },\n        'processed_messages': results\n    }\n}]"
       },
       "id": "store-embeddings",
       "name": "Store in ChromaDB",
@@ -114,25 +120,25 @@
       "main": [
         [
           {
-            "node": "Read Unprocessed Messages",
+            "node": "Read Quality Business Messages",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Unprocessed Messages": {
+    "Read Quality Business Messages": {
       "main": [
         [
           {
-            "node": "Anonymize Personal Data",
+            "node": "Anonymize & Add Context",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Anonymize Personal Data": {
+    "Anonymize & Add Context": {
       "main": [
         [
           {

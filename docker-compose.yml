@@ -1,37 +1,121 @@
 version: '3.8'
 
 services:
+  # n8n workflow orchestration (CORE SYSTEM)
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: whatsapp-n8n
+    restart: unless-stopped
+    ports:
+      - "5679:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5679/
+      - GENERIC_TIMEZONE=America/Mexico_City
+      - N8N_LOG_LEVEL=info
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+      - DB_TYPE=sqlite
+      - DB_SQLITE_DATABASE=/data/n8n.sqlite
+      # HuggingFace configuration for embeddings
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY:-}
+      - EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/workflows:ro
+      - ./database:/data:rw
+      - ./tools:/tools:ro
+    depends_on:
+      - chroma
+    networks:
+      - whatsapp-network
+
+  # ChromaDB vector database  
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: whatsapp-chromadb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_PORT=8000
+      - ANONYMIZED_TELEMETRY=false
+    volumes:
+      - chromadb_data:/chroma/chroma
+      - ./database/chroma:/chroma:rw
+    networks:
+      - whatsapp-network
+
+  # Backend WebSocket API (lightweight)
   backend:
     build: ./backend
+    container_name: whatsapp-backend
+    restart: unless-stopped
     ports:
       - "3001:3001"
+      - "3002:3002"  # WebSocket port
     volumes:
-      - ./database:/app/database
+      - ./database:/app/database:rw
       - ./backend:/app
     environment:
       - NODE_ENV=development
+      - PORT=3001
+      - WEBSOCKET_PORT=3002
+      - DATABASE_PATH=/app/database/store/messages.db
+      - CHROMA_DB_URL=http://chroma:8000
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook
+      - FRONTEND_URL=http://localhost:3000
     depends_on:
       - chroma
+      - n8n
+    networks:
+      - whatsapp-network
 
+  # Frontend React application
   frontend:
     build: ./frontend
+    container_name: whatsapp-frontend
+    restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
       - ./frontend:/app
     environment:
       - REACT_APP_API_URL=http://localhost:3001
+      - REACT_APP_WS_URL=ws://localhost:3002
+      - REACT_APP_NAME=WhatsApp Reply Assistant
+    depends_on:
+      - backend
+    networks:
+      - whatsapp-network
 
-  chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./database/chroma:/chroma/chroma
-
+  # WhatsApp Bridge (Go service)
   whatsapp-bridge:
     build: ./tools/whatsapp-bridge
+    container_name: whatsapp-bridge
+    restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
-      - ./database/store:/app/store
+      - ./database/store:/app/store:rw
+    environment:
+      - BRIDGE_PORT=8080
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook/whatsapp-message
+    depends_on:
+      - n8n
+    networks:
+      - whatsapp-network
+
+volumes:
+  n8n_data:
+    driver: local
+  chromadb_data:
+    driver: local
+
+networks:
+  whatsapp-network:
+    driver: bridge

@@ -1,0 +1,164 @@
+/* Main Page Layout and Styles */
+
+.main-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: 100%;
+}
+
+.main-page__status {
+  flex-shrink: 0;
+}
+
+.main-page__content {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2rem;
+  flex: 1;
+}
+
+.main-page__primary {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.main-page__secondary {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Copy Feedback Toast */
+.copy-feedback-toast {
+  position: fixed;
+  top: 2rem;
+  right: 2rem;
+  background: #25d366;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+  animation: slideInRight 0.3s ease-out, fadeOut 0.3s ease-out 2.7s;
+  z-index: 1000;
+  font-weight: 500;
+}
+
+.copy-feedback-toast__icon {
+  font-size: 1.2rem;
+}
+
+.copy-feedback-toast__message {
+  font-size: 0.9rem;
+}
+
+/* Debug Panel */
+.debug-panel {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  border: 1px dashed rgba(0, 0, 0, 0.1);
+}
+
+.debug-panel summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.debug-info {
+  background: white;
+  padding: 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  line-height: 1.4;
+}
+
+.debug-info > div {
+  margin-bottom: 0.25rem;
+}
+
+.debug-error {
+  color: #dc3545;
+  font-weight: 500;
+}
+
+/* Animations */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .main-page__content {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  
+  .main-page__secondary {
+    order: -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-page {
+    gap: 1rem;
+  }
+  
+  .main-page__content {
+    gap: 1rem;
+  }
+  
+  .main-page__primary {
+    gap: 1rem;
+  }
+  
+  .copy-feedback-toast {
+    top: 1rem;
+    right: 1rem;
+    left: 1rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .copy-feedback-toast {
+    padding: 0.5rem 0.75rem;
+  }
+  
+  .copy-feedback-toast__message {
+    font-size: 0.8rem;
+  }
+  
+  .debug-panel {
+    margin-top: 1rem;
+    padding: 0.75rem;
+  }
+  
+  .debug-info {
+    padding: 0.75rem;
+    font-size: 0.8rem;
+  }
+}

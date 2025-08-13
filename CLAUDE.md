@@ -103,14 +103,28 @@ CREATE TABLE messages (
 
 ### Vector Database (ChromaDB)
 - **Collection**: `conversation_embeddings`
-- **Documents**: Message text content
+- **Documents**: Anonymized message text content
 - **Metadata**: 
-  - `chat_jid`: Chat identifier
   - `message_id`: Original message ID
-  - `sender`: Message sender
+  - `chat_jid`: Chat identifier
+  - `chat_name`: Chat/contact name
+  - `sender`: Anonymized sender identifier
   - `timestamp`: Message timestamp
   - `is_business_response`: Whether message was from business
-- **Embeddings**: Vector representations of message content
+  - `is_business_chat`: Whether chat qualifies as business conversation
+  - `conversation_context`: Complete conversation context string
+  - `content_length`: Length of message content
+- **Embeddings**: Vector representations using all-mpnet-base-v2 model
+
+### Data Processing Tables (SQLite)
+```sql
+-- Tracks processed messages to avoid duplicates
+CREATE TABLE processed_embeddings (
+    message_id TEXT PRIMARY KEY,
+    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status TEXT DEFAULT 'success'
+);
+```
 
 ## Architecture & Data Flow
 
@@ -188,33 +202,48 @@ cd tools/whatsapp-bridge && go run main.go
 
 ## Implementation Phases
 
-### Phase 1: Foundation (Week 1)
+### Phase 1: Foundation (Week 1) - IN PROGRESS
 - [x] Reorganize project structure
-- [ ] Set up ChromaDB and embedding pipeline
-- [ ] Create data migration n8n workflow
-- [ ] Build basic backend API structure
-- [ ] Test similarity search with existing data
+- [x] Analyze existing MCP server integration
+- [x] Design MCP-safe data filtering strategy (see README-FILTERING.md)
+- [x] Create comprehensive n8n workflows for data migration and real-time operations
+- [ ] Set up Docker environment with n8n and ChromaDB
+- [ ] Test data migration workflow with smart filtering
+- [ ] Validate embedding generation pipeline
 
 ### Phase 2: Real-time Processing (Week 2)
-- [ ] Integrate MCP server with n8n workflows
-- [ ] Implement message processing pipeline
-- [ ] Build similarity search API endpoints
-- [ ] Create basic React frontend
-- [ ] Test end-to-end message flow
+- [ ] Deploy n8n workflows in Docker environment
+- [ ] Implement WebSocket backend API for real-time communication
+- [ ] Build similarity search API endpoints using ChromaDB
+- [ ] Create basic React frontend with WebSocket connection
+- [ ] Test end-to-end message flow with MCP integration
 
 ### Phase 3: User Interface (Week 3)
-- [ ] Build responsive React components
-- [ ] Implement clipboard copy functionality
-- [ ] Create conversation history display
-- [ ] Add real-time status indicators
-- [ ] Integrate with backend API
+- [ ] Build responsive React components (MessageDisplay, SuggestionButtons)
+- [ ] Implement clipboard copy functionality with Clipboard API
+- [ ] Create conversation history display with context preservation
+- [ ] Add real-time status indicators and WebSocket connection status
+- [ ] Integrate with backend API and test user workflows
 
 ### Phase 4: Optimization (Week 4)
-- [ ] Fine-tune similarity search parameters
-- [ ] Improve anonymization rules
-- [ ] Add error handling and logging
-- [ ] Performance optimization
-- [ ] User testing and feedback
+- [ ] Fine-tune similarity search parameters and thresholds
+- [ ] Optimize anonymization rules based on real usage patterns
+- [ ] Add comprehensive error handling and logging
+- [ ] Performance optimization for large message histories
+- [ ] User testing and feedback collection
+
+## Current Status: Phase 1 Progress
+
+### ✅ Completed Tasks
+1. **MCP Server Integration Analysis**: Verified compatibility with lharries/whatsapp-mcp
+2. **Data Filtering Strategy**: Created comprehensive MCP-safe filtering approach
+3. **n8n Workflow Design**: Built 2 workflows for data migration and real-time operations
+4. **Database Analysis**: Identified 17,446 total messages, 948 auto-responses to filter
+
+### 🔄 Next Steps
+1. Set up Docker Compose environment with n8n, ChromaDB, and backend services
+2. Test data migration workflow with the smart filtering query
+3. Validate embedding generation with all-mpnet-base-v2 model
 
 ## Key Features
 
@@ -246,9 +275,10 @@ DATABASE_PATH=../database/store/messages.db
 CHROMA_DB_PATH=../database/chroma
 PORT=3001
 FRONTEND_URL=http://localhost:3000
-EMBEDDING_MODEL=all-MiniLM-L6-v2
+EMBEDDING_MODEL=all-mpnet-base-v2
 SIMILARITY_THRESHOLD=0.7
 MAX_RESULTS=3
+WEBSOCKET_PORT=3002
 ```
 
 ### Frontend (.env)
