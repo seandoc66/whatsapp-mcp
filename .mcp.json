@@ -10,6 +10,17 @@
         "N8N_API_URL": "http://localhost:5679",
         "N8N_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5YzkyMjAyMS1mMThjLTRjN2YtOWU4Ni1lNjFhMjI5YWFkOTUiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzU2MTM5MzcxLCJleHAiOjE3NjM4Nzc2MDB9.hpux2LQk5BaVrW1P6xNP4IE5qpa4z3UCAbgjMXHVQxE"
       }
+    },
+    "docker-mcp": {
+      "command": "docker",
+      "args": [
+        "mcp",
+        "gateway",
+        "run"
+      ],
+      "env": {
+        "MCP_MODE": "stdio"
+      }
     }
   }
 }
