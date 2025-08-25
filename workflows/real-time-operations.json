@@ -136,7 +136,7 @@
       "parameters": {
         "options": {},
         "rules": {
-          "rules": [
+          "values": [
             {
               "conditions": {
                 "options": {
