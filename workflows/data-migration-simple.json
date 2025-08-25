@@ -1,0 +1,244 @@
+{
+  "name": "Historical Data Migration (API-based)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "migration-trigger",
+      "name": "Daily Migration Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/messages/pending",
+        "authentication": "none",
+        "requestMethod": "GET",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-pending-messages",
+      "name": "Fetch Pending Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "anonymized_content",
+              "name": "anonymized_content",
+              "value": "={{ $json.content.replace(/\\b\\d{10,}\\b/g, '[PHONE]').replace(/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g, '[EMAIL]').replace(/\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b/g, '[CARD]').replace(/\\b(?:IBAN|iban)\\s*:?\\s*[A-Z]{2}\\d{2}[A-Z0-9]{4}\\d{7}([A-Z0-9]?){0,16}\\b/g, '[IBAN]') }}",
+              "type": "string"
+            },
+            {
+              "id": "sender_anonymized",
+              "name": "sender_anonymized",
+              "value": "={{ $json.sender.includes('@') ? '[USER]' : $json.sender }}",
+              "type": "string"
+            },
+            {
+              "id": "conversation_context",
+              "name": "conversation_context",
+              "value": "={{ $json.chat_name + ' - ' + ($json.is_from_me ? 'Business' : 'Customer') + ' - ' + $json.timestamp }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "anonymize-data",
+      "name": "Anonymize & Add Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "model": "sentence-transformers/all-mpnet-base-v2",
+        "text": "={{ $json.anonymized_content }}",
+        "options": {}
+      },
+      "id": "generate-embeddings",
+      "name": "Generate Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "embedding_data",
+              "name": "embedding_data",
+              "value": "={{ { message_id: $json.message_id, chat_jid: $json.chat_jid, chat_name: $json.chat_name, sender: $json.sender_anonymized, content: $json.anonymized_content, timestamp: $json.timestamp, is_business_response: $json.is_from_me, is_business_chat: $json.is_business_chat, conversation_context: $json.conversation_context, content_length: $json.content.length, embedding: $('generate-embeddings').item.json.embedding } }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-payload",
+      "name": "Prepare Embedding Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/embeddings/store",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify($json.embedding_data) }}",
+        "options": {}
+      },
+      "id": "store-embedding",
+      "name": "Store Embedding via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/webhooks/migration-status",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({migration_completed: true, processed_count: $runIndex + 1, failed_count: 0, timestamp: new Date().toISOString(), message_id: $json.message_id, status: $json.status || 'success'}) }}",
+        "options": {}
+      },
+      "id": "log-progress",
+      "name": "Log Migration Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Daily Migration Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pending Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pending Messages": {
+      "main": [
+        [
+          {
+            "node": "Anonymize & Add Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anonymize & Add Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Prepare Embedding Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Embedding Payload": {
+      "main": [
+        [
+          {
+            "node": "Store Embedding via API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Embedding via API": {
+      "main": [
+        [
+          {
+            "node": "Log Migration Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCreatedBy": "n8n@1.0.0",
+    "instanceId": "whatsapp-reply-assistant"
+  },
+  "id": "3",
+  "tags": ["migration", "embeddings", "api-based"]
+}
