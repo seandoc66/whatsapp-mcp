@@ -1,0 +1,202 @@
+{
+  "name": "ChromaDB Test (Vector Store)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "value": 5
+            }
+          ]
+        }
+      },
+      "id": "test-trigger",
+      "name": "Test Trigger (Every 5 min)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "test_messages",
+              "name": "test_messages",
+              "value": "={{ [\n  {\n    message_id: 'test_001',\n    content: 'Hello, I need information about your English classes. What are your schedules and prices?',\n    chat_name: 'Test Business Chat'\n  },\n  {\n    message_id: 'test_002',\n    content: 'Hi! Thank you for your interest. Our English classes are available Monday to Friday from 9 AM to 6 PM. Basic course is $50/month.',\n    chat_name: 'Test Business Chat'\n  },\n  {\n    message_id: 'test_003',\n    content: 'Can you help me with enrollment? I want to join the intermediate course.',\n    chat_name: 'Another Business Contact'\n  }\n] }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-test-data",
+      "name": "Generate Test Messages",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "options": {}
+      },
+      "id": "vector-store-insert",
+      "name": "Insert to Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInsert",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "model": "sentence-transformers/all-mpnet-base-v2",
+        "options": {}
+      },
+      "id": "embeddings-huggingface",
+      "name": "HuggingFace Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+      "typeVersion": 1,
+      "position": [680, 480]
+    },
+    {
+      "parameters": {
+        "chroma": {
+          "collectionName": "conversation_embeddings",
+          "serverUrl": "http://chroma:8000"
+        },
+        "options": {}
+      },
+      "id": "chroma-vector-store",
+      "name": "Chroma Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreChroma",
+      "typeVersion": 1,
+      "position": [680, 620]
+    },
+    {
+      "parameters": {
+        "query": "={{ 'I want to join English classes' }}",
+        "topK": 3,
+        "options": {}
+      },
+      "id": "vector-store-retrieve",
+      "name": "Search Similar Messages",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreRetrieve",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:3001/api/webhooks/similarity-results",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({\n  query: 'I want to join English classes',\n  results: $json,\n  timestamp: new Date().toISOString(),\n  workflow_type: 'vector_store_test'\n}) }}",
+        "options": {}
+      },
+      "id": "send-results",
+      "name": "Send Results to Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Test Trigger (Every 5 min)": {
+      "main": [
+        [
+          {
+            "node": "Generate Test Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Test Messages": {
+      "main": [
+        [
+          {
+            "node": "Insert to Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Search Similar Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HuggingFace Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert to Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          },
+          {
+            "node": "Search Similar Messages",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chroma Vector Store": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Insert to Vector Store",
+            "type": "ai_vectorStore",
+            "index": 0
+          },
+          {
+            "node": "Search Similar Messages",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Similar Messages": {
+      "main": [
+        [
+          {
+            "node": "Send Results to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCreatedBy": "n8n@1.0.0",
+    "instanceId": "whatsapp-vector-store-test"
+  },
+  "tags": ["test", "vector-store", "chromadb", "embeddings"]
+}

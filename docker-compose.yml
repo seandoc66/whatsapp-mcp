@@ -20,6 +20,8 @@ services:
       - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
       - DB_TYPE=sqlite
       - DB_SQLITE_DATABASE=/data/n8n.sqlite
+      # API Key configuration for MCP access
+      - N8N_API_KEY=${N8N_API_KEY:-}
       # HuggingFace configuration for embeddings
       - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY:-}
       - EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2

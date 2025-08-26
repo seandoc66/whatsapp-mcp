@@ -168,9 +168,9 @@ app.post('/api/webhooks/new-message', (req, res) => {
 
 // Webhook receiver for migration status
 app.post('/api/webhooks/migration-status', (req, res) => {
-  const { migration_completed, processed_count, failed_count } = req.body;
+  const { migration_completed, processed_count, failed_count, workflow_type } = req.body;
   
-  console.log(`📊 Migration status from n8n:`, { processed_count, failed_count });
+  console.log(`📊 Migration status from n8n:`, { processed_count, failed_count, workflow_type });
   
   // Broadcast migration progress to all clients
   broadcastToAll({
@@ -179,7 +179,32 @@ app.post('/api/webhooks/migration-status', (req, res) => {
       migration_completed,
       processed_count,
       failed_count,
-      source: 'n8n_migration_workflow'
+      workflow_type: workflow_type || 'migration',
+      source: 'n8n_workflow'
+    }
+  });
+  
+  res.json({ status: 'received', timestamp: new Date().toISOString() });
+});
+
+// Webhook receiver for similarity search results
+app.post('/api/webhooks/similarity-results', (req, res) => {
+  const { query_message, similar_messages, workflow_type } = req.body;
+  
+  console.log(`🔍 Similarity search results from n8n:`, { 
+    query_length: query_message?.length, 
+    results_count: similar_messages?.documents?.length || 0,
+    workflow_type 
+  });
+  
+  // Broadcast similarity results to all clients
+  broadcastToAll({
+    type: 'similarity_results',
+    data: {
+      query_message,
+      similar_messages,
+      workflow_type: workflow_type || 'similarity',
+      source: 'n8n_chromadb_test'
     }
   });
   
