@@ -13,7 +13,7 @@ const http = require('http');
 
 // Configuration
 const BACKEND_HOST = process.env.BACKEND_HOST || 'localhost';
-const BACKEND_PORT = process.env.BACKEND_PORT || 3001;
+const BACKEND_PORT = process.env.BACKEND_PORT || 3004;
 
 /**
  * Make HTTP request

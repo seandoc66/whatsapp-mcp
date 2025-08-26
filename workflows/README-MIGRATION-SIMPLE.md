@@ -49,25 +49,101 @@ HTTP POST /api/webhooks/migration-status (log progress)
 
 ## Setup Instructions
 
-### 1. Test Backend APIs
+### 1. Fix SQLite3 Module Error
+**Problem**: The regular `data-migration.json` workflow fails with "Cannot find module 'sqlite3'" because n8n's Docker container cannot compile native SQLite3 modules on ARM64/Alpine.
+
+**Solution**: Use `data-migration-simple.json` which calls backend API endpoints instead of direct database access.
+
+### 2. Required Backend API Endpoints
+Before running the workflow, implement these endpoints in `backend/src/server.js`:
+
+#### `GET /api/messages/pending`
+```javascript
+app.get('/api/messages/pending', async (req, res) => {
+  const limit = parseInt(req.query.limit) || 100;
+  try {
+    // Use external SQLite handler script to avoid native compilation
+    const { exec } = require('child_process');
+    exec(`node scripts/sqlite-handler.js pending ${limit}`, { cwd: __dirname }, (error, stdout, stderr) => {
+      if (error) {
+        return res.status(500).json({ error: 'Database query failed', details: error.message });
+      }
+      const result = JSON.parse(stdout);
+      res.json(result);
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch pending messages', details: err.message });
+  }
+});
+```
+
+#### `POST /api/embeddings/store`
+```javascript
+app.post('/api/embeddings/store', async (req, res) => {
+  try {
+    const embeddingData = req.body;
+    
+    // Store in ChromaDB via HTTP API
+    const chromaResponse = await fetch('http://chroma:8000/api/v1/collections/conversation_embeddings/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids: [embeddingData.message_id],
+        embeddings: [embeddingData.embedding],
+        documents: [embeddingData.content],
+        metadatas: [{
+          message_id: embeddingData.message_id,
+          chat_jid: embeddingData.chat_jid,
+          chat_name: embeddingData.chat_name,
+          sender: embeddingData.sender,
+          timestamp: embeddingData.timestamp,
+          is_business_response: embeddingData.is_business_response,
+          is_business_chat: embeddingData.is_business_chat,
+          conversation_context: embeddingData.conversation_context,
+          content_length: embeddingData.content_length
+        }]
+      })
+    });
+    
+    if (!chromaResponse.ok) {
+      throw new Error(`ChromaDB error: ${chromaResponse.status}`);
+    }
+    
+    // Mark as processed using external SQLite handler
+    const { exec } = require('child_process');
+    exec(`node scripts/sqlite-handler.js mark-processed ${embeddingData.message_id}`, { cwd: __dirname }, (error) => {
+      if (error) {
+        console.error('Failed to mark as processed:', error);
+      }
+    });
+    
+    res.json({ success: true, message_id: embeddingData.message_id, stored_at: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to store embedding', details: err.message });
+  }
+});
+```
+
+### 3. Test Backend APIs
 ```bash
-cd /Users/maria/Sites/whatsapp-mcp/workflows
+cd /Users/shanedoherty/Sites/whatsapp-mcp/workflows
 node test-api-endpoints.js
 ```
 
-### 2. Start Backend Server
+### 4. Start Backend Server
 ```bash
-cd /Users/maria/Sites/whatsapp-mcp/backend
+cd /Users/shanedoherty/Sites/whatsapp-mcp/backend
 npm run dev
 ```
 
-### 3. Import Workflow into n8n
-1. Open n8n interface
-2. Create new workflow
-3. Import `data-migration-simple.json`
-4. Activate the workflow
+### 5. Import Workflow into n8n
+1. Open n8n interface at http://localhost:5679
+2. Create new workflow or import `data-migration-simple.json`
+3. **Important**: Do NOT use `data-migration.json` - it will fail with SQLite3 errors
+4. Configure HuggingFace credentials in the "Generate Embeddings" node
+5. Activate the workflow
 
-### 4. Manual Test
+### 6. Manual Test
 - Use n8n's "Execute Workflow" button to test manually
 - Check logs in backend console
 - Verify data in ChromaDB and processed_embeddings table

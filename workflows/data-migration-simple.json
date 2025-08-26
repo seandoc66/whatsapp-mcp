@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "url": "http://backend:3001/api/messages/pending",
+        "url": "http://host.docker.internal:3004/api/messages/pending",
         "authentication": "none",
         "requestMethod": "GET",
         "sendQuery": true,
@@ -115,7 +115,7 @@
     },
     {
       "parameters": {
-        "url": "http://backend:3001/api/embeddings/store",
+        "url": "http://host.docker.internal:3004/api/embeddings/store",
         "authentication": "none",
         "requestMethod": "POST",
         "sendHeaders": true,
@@ -139,7 +139,7 @@
     },
     {
       "parameters": {
-        "url": "http://backend:3001/api/webhooks/migration-status",
+        "url": "http://host.docker.internal:3004/api/webhooks/migration-status",
         "authentication": "none",
         "requestMethod": "POST",
         "sendHeaders": true,

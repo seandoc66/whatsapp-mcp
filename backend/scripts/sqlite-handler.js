@@ -9,7 +9,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 // Database path (adjust for host system)
-const DATABASE_PATH = path.resolve(__dirname, '../../database/store/messages.db');
+const DATABASE_PATH = process.env.DATABASE_PATH || path.resolve(__dirname, '../../whatsapp-bridge/store/messages.db');
 
 function getPendingMessages(limit = 100) {
   return new Promise((resolve, reject) => {
@@ -59,11 +59,7 @@ function getPendingMessages(limit = 100) {
           GROUP BY c3.name 
           HAVING COUNT(*) >= 3
         )
-        -- Skip already processed
-        AND m.id NOT IN (
-          SELECT message_id FROM processed_embeddings 
-          WHERE processed_embeddings.message_id = m.id
-        )
+        -- Note: processed_embeddings check will be added after first migration
       ORDER BY c.name, m.timestamp ASC
       LIMIT ?
     `;
@@ -148,8 +144,8 @@ function getStats() {
     const statsQuery = `
       SELECT 
         COUNT(*) as total_messages,
-        (SELECT COUNT(*) FROM processed_embeddings WHERE status = 'success') as processed_count,
-        (SELECT COUNT(*) FROM processed_embeddings WHERE status = 'failed') as failed_count,
+        0 as processed_count,
+        0 as failed_count,
         (SELECT COUNT(*) FROM messages m 
          LEFT JOIN chats c ON m.chat_jid = c.jid
          WHERE m.content IS NOT NULL 

@@ -63,6 +63,7 @@
     {
       "parameters": {
         "model": "sentence-transformers/all-mpnet-base-v2",
+        "text": "={{ $json.anonymized_content }}",
         "options": {}
       },
       "id": "generate-embeddings",
