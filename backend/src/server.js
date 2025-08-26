@@ -15,8 +15,9 @@ const http = require('http');
 const WebSocket = require('ws');
 const cors = require('cors');
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
-const { ChromaApi } = require('chromadb');
+// TODO: Re-enable SQLite and ChromaDB after fixing native dependencies
+// const sqlite3 = require('sqlite3').verbose();
+// const { ChromaApi } = require('chromadb');
 
 const app = express();
 const server = http.createServer(app);

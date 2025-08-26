@@ -52,7 +52,7 @@ services:
 
   # Backend WebSocket API (lightweight)
   backend:
-    platform: linux/amd64
+    platform: linux/arm64
     build: ./backend
     container_name: whatsapp-backend
     restart: unless-stopped
